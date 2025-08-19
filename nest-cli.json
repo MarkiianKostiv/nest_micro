@@ -26,6 +26,15 @@
         "tsConfigPath": "libs/common/tsconfig.lib.json"
       }
     },
+    "music": {
+      "type": "application",
+      "root": "apps/music",
+      "entryFile": "main",
+      "sourceRoot": "apps/music/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/music/tsconfig.app.json"
+      }
+    },
     "reservations": {
       "type": "application",
       "root": "apps/reservations",
