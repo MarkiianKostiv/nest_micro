@@ -1,82 +1,75 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
-import { Pinecone } from '@pinecone-database/pinecone';
-import { embed } from 'ai';
-import { openai } from '@ai-sdk/openai';
 import { firstValueFrom } from 'rxjs';
 import { HttpService } from '@nestjs/axios';
-import { DeezerTrack } from './interfaces/deezer-track.interface';
+import { ConfigService } from '@nestjs/config';
+import { embed } from 'ai';
 import { getLyrics } from 'genius-lyrics-api';
+import { openai } from '@ai-sdk/openai';
+import { Song } from './interfaces/song.interface';
+import { normalizeLyrics } from './utils/normalizeLyrics';
+import { FindSongOrAuthorDto } from './dto/findSongOrAuthor.dto';
 
 @Injectable()
 export class MusicService {
-  private pinecone: Pinecone;
-  private indexName = 'songs';
-  constructor(private readonly http: HttpService) {}
+  constructor(
+    private readonly http: HttpService,
+    private readonly configService: ConfigService,
+  ) {}
 
-  private normalizeLyrics(raw: string): string {
-    return raw
-      .replace(/^\d+\s+Contributors.*?\n+/is, '')
-      .replace(/Read More.*?\n+/gi, '')
-      .replace(/\(.*?(French|Deutsch|Español|中文).*?\)/gi, '')
-      .replace(/\[.*?가사\]/gi, '')
-      .replace(/\[.*?\]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-
-  async getSongs(limit = 10) {
+  private async getSongs(limit = 10): Promise<Song> {
     try {
       const { data } = await firstValueFrom(
-        this.http.get(`https://api.deezer.com/chart/0/tracks?limit=${limit}`),
+        this.http.get(
+          `${this.configService.get('DEEZER_API_BASE_URL')}/chart/0/tracks?limit=${limit}`,
+        ),
       );
 
       const track = data?.data?.[0];
       if (!track) throw new InternalServerErrorException('No track found');
 
-      const options = {
-        apiKey: process.env.GENIUS_API_KEY || '',
+      const lyrics = await getLyrics({
+        apiKey: this.configService.get('GENIUS_API_KEY'),
         title: track.title,
         artist: track.artist.name,
         optimizeQuery: true,
-      };
-
-      const lyrics = await getLyrics(options);
+      });
 
       return {
         deezer_id: track.id,
         title: track.title,
         artist: track.artist.name,
-        lyrics: this.normalizeLyrics(lyrics) || null,
+        lyrics: normalizeLyrics(lyrics),
       };
     } catch (error) {
       console.error('Error fetching song with lyrics:', error);
-      throw new InternalServerErrorException(error);
+      throw new InternalServerErrorException(error as any);
     }
   }
 
   async vectorizeSong() {
+    const songs = await this.getSongs();
+
     try {
-      const track = await this.getSongs(1);
-
-      const combinedText = `${track.title} by ${track.artist}\n\n${track.lyrics}`;
-
       const { embedding } = await embed({
         model: openai.embedding('text-embedding-3-small'),
-        value: combinedText,
+        value: songs.lyrics,
       });
 
-      console.log('🎵 Track metadata:', {
-        id: track.deezer_id,
-        title: track.title,
-        artist: track.artist,
-      });
-
-      console.log('📐 Embedding vector:', embedding);
-
-      return embedding;
+      return {
+        song: songs,
+        vectorLength: embedding.length,
+        embedding,
+      };
     } catch (error) {
-      console.error('Error vectorizing song:', error);
       throw new InternalServerErrorException(error);
+    }
+  }
+  private async openAiFallback(query: FindSongOrAuthorDto) {}
+  async findSongOrAuthor(query: FindSongOrAuthorDto) {
+    const dbMatch = false;
+
+    if (!dbMatch) {
+      return await this.openAiFallback(query);
     }
   }
 }
