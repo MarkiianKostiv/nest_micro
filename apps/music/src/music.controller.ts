@@ -1,7 +1,5 @@
-import { Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post } from '@nestjs/common';
 import { MusicService } from './music.service';
-import { embed } from 'ai';
-import { openai } from '@ai-sdk/openai';
 import { FindSongOrAuthorDto } from './dto/findSongOrAuthor.dto';
 
 @Controller()
@@ -13,13 +11,8 @@ export class MusicController {
     return await this.musicService.vectorizeSong();
   }
 
-  // @Post()
-  // async example() {
-  //   return await this.musicService.vectorizeSong();
-  // }
-
   @Post()
-  async find(query: FindSongOrAuthorDto) {
+  async find(@Body() query: FindSongOrAuthorDto) {
     return await this.musicService.findSongOrAuthor(query);
   }
 }

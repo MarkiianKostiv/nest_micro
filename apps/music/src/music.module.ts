@@ -7,6 +7,7 @@ import { LoggerModule } from '@app/common/logger/logger.module';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { AUTH_SERVICE } from '@app/common/auth/constants/services';
 import { HttpModule } from '@nestjs/axios';
+import { SystemPromptsModule } from '@app/common/system-prompts/system-prompts.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { HttpModule } from '@nestjs/axios';
       },
     ]),
     HttpModule,
+    SystemPromptsModule,
   ],
   controllers: [MusicController],
   providers: [MusicService],
