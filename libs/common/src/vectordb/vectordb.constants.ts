@@ -1,0 +1,1 @@
+export const VECTORDB_CLIENT = 'VECTORDB_CLIENT';

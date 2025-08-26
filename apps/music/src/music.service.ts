@@ -10,7 +10,6 @@ import { normalizeLyrics } from './utils/normalizeLyrics';
 import { FindSongOrAuthorDto } from './dto/findSongOrAuthor.dto';
 import { SystemPromptsService } from '@app/common/system-prompts/system-prompts.service';
 import { AiFallbackResponse } from './interfaces/ai-fallback-response.interface';
-import { parse } from 'path';
 import { parseUserQuery } from './utils/parseUserQuery';
 
 @Injectable()
@@ -121,12 +120,28 @@ export class MusicService {
         temperature: 0,
       });
 
-      const text = response.text.trim();
+      let text = response.text
+        .trim()
+        .replace(/^```(json)?/, '')
+        .replace(/```$/, '')
+        .replace(/\\n/g, ' ')
+        .replace(/\r/g, '')
+        .replace(/\t/g, ' ')
+        .replace(/\n/g, ' ')
+        .trim();
+
+      if (!text.endsWith('}')) {
+        if (!text.endsWith('"')) {
+          text += '"';
+        }
+        text += '}';
+      }
 
       try {
         const parsed = JSON.parse(text) as AiFallbackResponse;
         return parsed;
       } catch (err) {
+        console.error('Error parsing AI response:', err);
         return {
           type: 'not_found',
           message: 'There was a problem parsing the AI response.',
@@ -140,6 +155,20 @@ export class MusicService {
     }
   }
 
+  private async prepareQueryForDBSearch(query: FindSongOrAuthorDto) {
+    const systemPrompt = this.systemPrompts.prepareQueryForDBSearch();
+    const messages = parseUserQuery({ query, systemPrompt });
+
+    const response = await generateText({
+      model: openai('gpt-4o-mini'),
+      messages,
+      temperature: 0,
+    });
+
+    const text = response.text.trim();
+    return text;
+  }
+
   async findSongOrAuthor(query: FindSongOrAuthorDto) {
     const { isQueryValid, message } = await this.validateQuery(query);
 
@@ -149,6 +178,10 @@ export class MusicService {
         message,
       };
     }
+
+    const dBQuery = await this.prepareQueryForDBSearch(query);
+
+    console.log('DB QUERY:', dBQuery);
 
     const dbMatch = false;
 
