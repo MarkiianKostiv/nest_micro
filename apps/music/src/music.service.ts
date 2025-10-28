@@ -9,6 +9,10 @@ import { Song } from './interfaces/song.interface';
 import { normalizeLyrics } from './utils/normalizeLyrics';
 import { FindSongOrAuthorDto } from './dto/findSongOrAuthor.dto';
 import { SystemPromptsService } from '@app/common/system-prompts/system-prompts.service';
+import {
+  VectordbService,
+  PineconeRecord,
+} from '@app/common/vectordb/vectordb.service';
 import { AiFallbackResponse } from './interfaces/ai-fallback-response.interface';
 import { parseUserQuery } from './utils/parseUserQuery';
 
@@ -18,6 +22,7 @@ export class MusicService {
     private readonly http: HttpService,
     private readonly configService: ConfigService,
     private readonly systemPrompts: SystemPromptsService,
+    private readonly vectordbService: VectordbService,
   ) {}
 
   private async getSongs(limit = 10): Promise<Song> {
@@ -28,7 +33,7 @@ export class MusicService {
         ),
       );
 
-      const track = data?.data?.[0];
+      const track = data?.data?.[3];
       if (!track) throw new InternalServerErrorException('No track found');
 
       const lyrics = await getLyrics({
@@ -67,6 +72,28 @@ export class MusicService {
     } catch (error) {
       throw new InternalServerErrorException(error);
     }
+  }
+
+  async addVectorizedSongToIndex() {
+    const indexName =
+      this.configService.get<string>('PINECONE_INDEX') || 'songs';
+
+    const { song, vectorLength, embedding } = await this.vectorizeSong();
+
+    await this.vectordbService.ensureIndex(indexName, vectorLength);
+
+    const record: PineconeRecord = {
+      id: `song:${song.deezer_id}`,
+      values: embedding,
+      metadata: {
+        deezer_id: song.deezer_id,
+        title: song.title,
+        artist: song.artist,
+      },
+    };
+
+    const resp = await this.vectordbService.upsertVectors(indexName, [record]);
+    return resp;
   }
 
   private async validateQuery(
@@ -165,8 +192,52 @@ export class MusicService {
       temperature: 0,
     });
 
-    const text = response.text.trim();
-    return text;
+    const normalizedQuery = response.text.trim();
+
+    try {
+      const { embedding } = await embed({
+        model: openai.embedding('text-embedding-3-small'),
+        value: normalizedQuery,
+      });
+
+      return {
+        normalizedQuery,
+        embedding,
+      };
+    } catch (error) {
+      throw new InternalServerErrorException(
+        'Failed to vectorize query: ' + error,
+      );
+    }
+  }
+
+  private async evaluateDBResults(normalizedQuery: string, matches: any[]) {
+    const systemPrompt = this.systemPrompts.vectorDBEvaluationPrompt();
+
+    const response = await generateText({
+      model: openai('gpt-4o-mini'),
+      temperature: 0.3,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        {
+          role: 'user',
+          content: `Normalized search: "${normalizedQuery}" Vector matches: ${JSON.stringify(matches, null, 2)}`,
+        },
+      ],
+    });
+
+    try {
+      const text = response.text.trim();
+      const jsonStart = text.indexOf('{');
+      const jsonEnd = text.lastIndexOf('}');
+      return JSON.parse(text.slice(jsonStart, jsonEnd + 1));
+    } catch {
+      return {
+        dbMatch: false,
+        message: 'Parsing error in AI evaluation',
+        matches: [],
+      };
+    }
   }
 
   async findSongOrAuthor(query: FindSongOrAuthorDto) {
@@ -179,19 +250,33 @@ export class MusicService {
       };
     }
 
-    const dBQuery = await this.prepareQueryForDBSearch(query);
+    const { normalizedQuery, embedding } =
+      await this.prepareQueryForDBSearch(query);
 
-    console.log('DB QUERY:', dBQuery);
+    const indexName =
+      this.configService.get<string>('PINECONE_INDEX') || 'songs';
+    const pineconeResults = await this.vectordbService.query(
+      indexName,
+      embedding,
+      {
+        topK: 5,
+        includeMetadata: true,
+      },
+    );
 
-    const dbMatch = false;
+    const aiEval = await this.evaluateDBResults(
+      normalizedQuery,
+      pineconeResults.matches,
+    );
 
-    if (!dbMatch) {
+    if (!aiEval.dbMatch) {
       return await this.aiFallback(query);
     }
 
-    // return {
-    //   isQueryValid,
-    //   message,
-    // };
+    return {
+      fromDB: true,
+      message: aiEval.message,
+      matches: aiEval.matches,
+    };
   }
 }

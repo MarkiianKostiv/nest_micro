@@ -8,6 +8,7 @@ import { ClientsModule, Transport } from '@nestjs/microservices';
 import { AUTH_SERVICE } from '@app/common/auth/constants/services';
 import { HttpModule } from '@nestjs/axios';
 import { SystemPromptsModule } from '@app/common/system-prompts/system-prompts.module';
+import { VectordbModule } from '@app/common/vectordb/vectordb.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { SystemPromptsModule } from '@app/common/system-prompts/system-prompts.m
       validationSchema: Joi.object({
         TCP_MUSIC_PORT: Joi.string().required(),
         PINECONE_API_KEY: Joi.string().required(),
+        PINECONE_INDEX: Joi.string().required(),
         GENIUS_API_KEY: Joi.string().required(),
         OPENAI_API_KEY: Joi.string().required(),
         MUSIC_PORT: Joi.string().required(),
@@ -38,6 +40,7 @@ import { SystemPromptsModule } from '@app/common/system-prompts/system-prompts.m
     ]),
     HttpModule,
     SystemPromptsModule,
+    VectordbModule.forRoot(),
   ],
   controllers: [MusicController],
   providers: [MusicService],

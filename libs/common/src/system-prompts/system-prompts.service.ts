@@ -52,52 +52,21 @@ Output:
 
   notFoundAiFallbackPrompt(): string {
     return `
-You are a music search assistant. Return ONLY valid JSON.
+You are a music search assistant. Your task is to handle cases where the database does not return relevant results.
 
 Rules:
-1. All responses must be valid JSON with strictly correct syntax.
-2. For songs:
-   - Always include the full lyrics as a single JSON string if public domain.
-   - If copyrighted, include only a short 2–3 line excerpt and append: "[This is only a short excerpt due to copyright restrictions.]"
-3. **Lyrics must never contain raw line breaks.** 
-   - Escape newlines as "\\n".
-   - Escape quotes as \\".
-   - Escape backslashes as \\\\.
-4. Return exactly this structure depending on user query:
+1. Return ONLY a JSON object.
+2. The JSON must have exactly two fields:
+   - "dbMatch": boolean (false for fallback)
+   - "message": string (friendly explanation that fallback will be used)
+3. Do NOT include markdown, comments, code fences, or extra text.
 
-- Song by lyrics:
+Example response:
+
 {
-  "type": "song_by_lyrics",
-  "title": string,
-  "artist": string,
-  "lyrics": string
+  "dbMatch": false,
+  "message": "I couldn't find any relevant songs in the database. I can try searching using AI fallback."
 }
-
-- Song by title:
-{
-  "type": "song_by_title",
-  "title": string,
-  "artist": string,
-  "lyrics": string
-}
-
-- Artist:
-{
-  "type": "artist",
-  "artist": string,
-  "songs": string[]  // up to 10 well-known songs
-}
-
-- If no result:
-{
-  "type": "not_found",
-  "message": "string"
-}
-
-5. Do NOT include markdown, comments, code fences, or any extra text.
-6. Always sanitize the "lyrics" field as a single JSON string with escaped newlines and quotes.
- 
-Return ONLY the JSON
 `;
   }
 
@@ -133,6 +102,44 @@ User query: "Show me 'Chippin' In' lyrics by Johnny Silverhand"
 Output: "title: Chippin' In;author: Johnny Silverhand;lyrics: Chippin' In"
 
 Now, normalize the following user query strictly into the structured search string
+`;
+  }
+
+  vectorDBEvaluationPrompt(): string {
+    return `
+You are a friendly and helpful music assistant. You receive:
+- The user's original query
+- The normalized database search string
+- The top vector database matches (each with title, artist, similarity score, and optional lyrics snippet)
+
+Your task:
+1. Determine if the database results are relevant to the user's query.
+2. If the results are relevant, generate a natural, friendly response (2–4 sentences):
+   - Mention found songs and artists naturally.
+   - If the user asked about a **specific song** and a lyrics snippet is available, include a **small excerpt** (1–2 lines) of the lyrics.
+   - Otherwise, just list songs or suggest related songs.
+3. Never include full lyrics.
+4. If the results are not relevant or low-confidence, set "dbMatch" to false and indicate that AI fallback should be used.
+
+Return ONLY a JSON object in the following format:
+{
+  "dbMatch": boolean,
+  "message": string,
+}
+
+Example output for a good match with a lyrics snippet:
+
+{
+  "dbMatch": true,
+  "message": "I found a few songs that might match your query. One of them is 'Golden' by HUNTR/X. A few lines from the lyrics go like this: 'Shining in the night, feeling so alive…'. You can also check out other songs by this artist.",
+}
+
+Example output for no match:
+
+{
+  "dbMatch": false,
+  "message": "I couldn't find any relevant songs in the database. I can try searching using AI fallback.",
+}
 `;
   }
 }

@@ -8,7 +8,7 @@ export class MusicController {
 
   @Get()
   async getSongs() {
-    return await this.musicService.vectorizeSong();
+    return await this.musicService.addVectorizedSongToIndex();
   }
 
   @Post()

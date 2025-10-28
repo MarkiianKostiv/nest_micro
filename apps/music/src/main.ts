@@ -10,6 +10,6 @@ async function bootstrap() {
   app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
   app.useLogger(app.get(Logger));
   app.enableCors();
-  await app.listen(process.env.MUSIC_PORT ?? 3000);
+  await app.listen(process.env.MUSIC_PORT ?? 8083, '0.0.0.0');
 }
 bootstrap();
