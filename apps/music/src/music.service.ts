@@ -1,100 +1,20 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
-import { firstValueFrom } from 'rxjs';
-import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { embed, generateText } from 'ai';
-import { getLyrics } from 'genius-lyrics-api';
 import { openai } from '@ai-sdk/openai';
-import { Song } from './interfaces/song.interface';
-import { normalizeLyrics } from './utils/normalizeLyrics';
 import { FindSongOrAuthorDto } from './dto/findSongOrAuthor.dto';
 import { SystemPromptsService } from '@app/common/system-prompts/system-prompts.service';
-import {
-  VectordbService,
-  PineconeRecord,
-} from '@app/common/vectordb/vectordb.service';
+import { VectordbService } from '@app/common/vectordb/vectordb.service';
 import { AiFallbackResponse } from './interfaces/ai-fallback-response.interface';
 import { parseUserQuery } from './utils/parseUserQuery';
 
 @Injectable()
 export class MusicService {
   constructor(
-    private readonly http: HttpService,
     private readonly configService: ConfigService,
     private readonly systemPrompts: SystemPromptsService,
     private readonly vectordbService: VectordbService,
   ) {}
-
-  private async getSongs(limit = 10): Promise<Song> {
-    try {
-      const { data } = await firstValueFrom(
-        this.http.get(
-          `${this.configService.get('DEEZER_API_BASE_URL')}/chart/0/tracks?limit=${limit}`,
-        ),
-      );
-
-      const track = data?.data?.[3];
-      if (!track) throw new InternalServerErrorException('No track found');
-
-      const lyrics = await getLyrics({
-        apiKey: this.configService.get('GENIUS_API_KEY'),
-        title: track.title,
-        artist: track.artist.name,
-        optimizeQuery: true,
-      });
-
-      return {
-        deezer_id: track.id,
-        title: track.title,
-        artist: track.artist.name,
-        lyrics: normalizeLyrics(lyrics),
-      };
-    } catch (error) {
-      console.error('Error fetching song with lyrics:', error);
-      throw new InternalServerErrorException(error as any);
-    }
-  }
-
-  async vectorizeSong() {
-    const songs = await this.getSongs();
-
-    try {
-      const { embedding } = await embed({
-        model: openai.embedding('text-embedding-3-small'),
-        value: songs.lyrics,
-      });
-
-      return {
-        song: songs,
-        vectorLength: embedding.length,
-        embedding,
-      };
-    } catch (error) {
-      throw new InternalServerErrorException(error);
-    }
-  }
-
-  async addVectorizedSongToIndex() {
-    const indexName =
-      this.configService.get<string>('PINECONE_INDEX') || 'songs';
-
-    const { song, vectorLength, embedding } = await this.vectorizeSong();
-
-    await this.vectordbService.ensureIndex(indexName, vectorLength);
-
-    const record: PineconeRecord = {
-      id: `song:${song.deezer_id}`,
-      values: embedding,
-      metadata: {
-        deezer_id: song.deezer_id,
-        title: song.title,
-        artist: song.artist,
-      },
-    };
-
-    const resp = await this.vectordbService.upsertVectors(indexName, [record]);
-    return resp;
-  }
 
   private async validateQuery(
     query: FindSongOrAuthorDto,
@@ -138,7 +58,6 @@ export class MusicService {
   ): Promise<AiFallbackResponse> {
     try {
       const systemPrompt = this.systemPrompts.notFoundAiFallbackPrompt();
-
       const messages = parseUserQuery({ query, systemPrompt });
 
       const response = await generateText({
@@ -147,36 +66,40 @@ export class MusicService {
         temperature: 0,
       });
 
-      let text = response.text
+      const text = response.text
         .trim()
         .replace(/^```(json)?/, '')
         .replace(/```$/, '')
-        .replace(/\\n/g, ' ')
         .replace(/\r/g, '')
         .replace(/\t/g, ' ')
         .replace(/\n/g, ' ')
         .trim();
 
-      if (!text.endsWith('}')) {
-        if (!text.endsWith('"')) {
-          text += '"';
-        }
-        text += '}';
-      }
-
       try {
-        const parsed = JSON.parse(text) as AiFallbackResponse;
-        return parsed;
+        const parsed = JSON.parse(text);
+
+        if (parsed && typeof parsed.message === 'string') {
+          return {
+            message: parsed.message,
+            ...(parsed.data ? { data: parsed.data } : {}),
+          } as AiFallbackResponse;
+        }
+
+        if (parsed && parsed.type) {
+          return parsed as AiFallbackResponse;
+        }
+
+        return {
+          message: 'I could not parse AI fallback response.',
+        } as AiFallbackResponse;
       } catch (err) {
         console.error('Error parsing AI response:', err);
         return {
-          type: 'not_found',
           message: 'There was a problem parsing the AI response.',
-        };
+        } as AiFallbackResponse;
       }
     } catch (error) {
       return {
-        type: 'not_found',
         message: 'There was a problem processing your request.',
       };
     }
@@ -243,6 +166,8 @@ export class MusicService {
   async findSongOrAuthor(query: FindSongOrAuthorDto) {
     const { isQueryValid, message } = await this.validateQuery(query);
 
+    console.log('Query validation result:', isQueryValid, query.messages);
+
     if (!isQueryValid) {
       return {
         isQueryValid,
@@ -259,7 +184,7 @@ export class MusicService {
       indexName,
       embedding,
       {
-        topK: 5,
+        topK: 10,
         includeMetadata: true,
       },
     );
@@ -269,8 +194,16 @@ export class MusicService {
       pineconeResults.matches,
     );
 
+    console.log('AI Evaluation result:', aiEval.dbMatch);
+
     if (!aiEval.dbMatch) {
-      return await this.aiFallback(query);
+      const fallback = await this.aiFallback(query);
+      console.log('AI Fallback response:', fallback);
+
+      return {
+        fromDB: false,
+        message: fallback.message,
+      };
     }
 
     return {

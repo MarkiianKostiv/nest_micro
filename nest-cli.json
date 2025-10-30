@@ -43,6 +43,15 @@
       "compilerOptions": {
         "tsConfigPath": "apps/reservations/tsconfig.app.json"
       }
+    },
+    "songs-parcer": {
+      "type": "application",
+      "root": "apps/songs-parcer",
+      "entryFile": "main",
+      "sourceRoot": "apps/songs-parcer/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/songs-parcer/tsconfig.app.json"
+      }
     }
   },
   "monorepo": true,

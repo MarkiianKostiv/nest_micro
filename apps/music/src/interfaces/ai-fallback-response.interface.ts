@@ -1,8 +1,8 @@
-interface BaseResponse {
-  type: string;
-}
+// interface BaseResponse {
+//   message: string;
+// }
 
-export interface SongByLyricsResponse extends BaseResponse {
+/*export interface SongByLyricsResponse extends BaseResponse {
   type: 'song_by_lyrics';
   title: string;
   artist: string;
@@ -25,10 +25,8 @@ export interface ArtistResponse extends BaseResponse {
 export interface NotFoundResponse extends BaseResponse {
   type: 'not_found';
   message: string;
-}
+} */
 
-export type AiFallbackResponse =
-  | SongByLyricsResponse
-  | SongByTitleResponse
-  | ArtistResponse
-  | NotFoundResponse;
+export type AiFallbackResponse = {
+  message: string;
+};
