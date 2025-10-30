@@ -1,12 +1,10 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { Logger } from 'nestjs-pino';
-import * as cookieParser from 'cookie-parser';
 import { MusicModule } from './music.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(MusicModule);
-  app.use(cookieParser());
   app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
   app.useLogger(app.get(Logger));
   app.enableCors();

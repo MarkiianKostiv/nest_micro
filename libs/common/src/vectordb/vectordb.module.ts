@@ -12,7 +12,7 @@ export class VectordbModule {
       providers: [
         {
           provide: VECTORDB_CLIENT,
-          useFactory: async (configService: ConfigService) => {
+          useFactory: (configService: ConfigService) => {
             const apiKey = configService.get<string>('PINECONE_API_KEY');
 
             if (!apiKey) {

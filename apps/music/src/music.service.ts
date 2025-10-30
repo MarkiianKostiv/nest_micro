@@ -30,22 +30,30 @@ export class MusicService {
         temperature: 0,
       });
 
+      let parsed: unknown;
       try {
-        const parsed = JSON.parse(text);
-        return {
-          isQueryValid: Boolean(parsed.isQueryValid),
-          message:
-            typeof parsed.message === 'string'
-              ? parsed.message
-              : 'I can help you find songs, please ask me about lyrics, artist, or title.',
-        };
-      } catch (e) {
-        return {
-          isQueryValid: false,
-          message: 'Error processing your request. Please try again later.',
-        };
+        parsed = JSON.parse(text);
+      } catch {
+        parsed = null;
       }
-    } catch (err) {
+
+      const isObject =
+        typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed);
+
+      const isQueryValid =
+        isObject &&
+        typeof (parsed as Record<string, unknown>).isQueryValid === 'boolean'
+          ? Boolean((parsed as Record<string, unknown>).isQueryValid)
+          : false;
+
+      const message =
+        isObject &&
+        typeof (parsed as Record<string, unknown>).message === 'string'
+          ? (parsed as Record<string, string>).message
+          : 'I can help you find songs, please ask me about lyrics, artist, or title.';
+
+      return { isQueryValid, message };
+    } catch {
       return {
         isQueryValid: false,
         message: 'Error processing your request. Please try again later.',
@@ -60,13 +68,13 @@ export class MusicService {
       const systemPrompt = this.systemPrompts.notFoundAiFallbackPrompt();
       const messages = parseUserQuery({ query, systemPrompt });
 
-      const response = await generateText({
+      const { text: rawText } = await generateText({
         model: openai('gpt-4o-mini'),
         messages,
         temperature: 0,
       });
 
-      const text = response.text
+      const cleanText = rawText
         .trim()
         .replace(/^```(json)?/, '')
         .replace(/```$/, '')
@@ -75,30 +83,32 @@ export class MusicService {
         .replace(/\n/g, ' ')
         .trim();
 
+      let parsed: unknown;
       try {
-        const parsed = JSON.parse(text);
+        parsed = JSON.parse(cleanText);
+      } catch {
+        parsed = null;
+      }
 
-        if (parsed && typeof parsed.message === 'string') {
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const obj = parsed as Record<string, unknown>;
+
+        if (typeof obj.message === 'string') {
           return {
-            message: parsed.message,
-            ...(parsed.data ? { data: parsed.data } : {}),
+            message: obj.message,
+            ...(obj.data ? { data: obj.data } : {}),
           } as AiFallbackResponse;
         }
 
-        if (parsed && parsed.type) {
-          return parsed as AiFallbackResponse;
+        if (typeof obj.type === 'string') {
+          return obj as AiFallbackResponse;
         }
-
-        return {
-          message: 'I could not parse AI fallback response.',
-        } as AiFallbackResponse;
-      } catch (err) {
-        console.error('Error parsing AI response:', err);
-        return {
-          message: 'There was a problem parsing the AI response.',
-        } as AiFallbackResponse;
       }
-    } catch (error) {
+
+      return {
+        message: 'I could not parse AI fallback response.',
+      };
+    } catch {
       return {
         message: 'There was a problem processing your request.',
       };
