@@ -26,6 +26,15 @@
         "tsConfigPath": "libs/common/tsconfig.lib.json"
       }
     },
+    "music": {
+      "type": "application",
+      "root": "apps/music",
+      "entryFile": "main",
+      "sourceRoot": "apps/music/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/music/tsconfig.app.json"
+      }
+    },
     "reservations": {
       "type": "application",
       "root": "apps/reservations",
@@ -33,6 +42,15 @@
       "sourceRoot": "apps/reservations/src",
       "compilerOptions": {
         "tsConfigPath": "apps/reservations/tsconfig.app.json"
+      }
+    },
+    "songs-parcer": {
+      "type": "application",
+      "root": "apps/songs-parcer",
+      "entryFile": "main",
+      "sourceRoot": "apps/songs-parcer/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/songs-parcer/tsconfig.app.json"
       }
     }
   },
